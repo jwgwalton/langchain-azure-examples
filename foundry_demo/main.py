@@ -91,14 +91,18 @@ def _build_chat_model() -> ChatOpenAI:
     )
 
 
-def main() -> None:
-    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        provider = TracerProvider()
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-        trace.set_tracer_provider(provider)
-        enable_auto_tracing()
-    else:
-        enable_auto_tracing(auto_configure_azure_monitor=True)
+if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or os.environ.get(
+    "OTEL_EXPORTER_OTLP_ENDPOINT"
+):
+    provider = TracerProvider()
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    trace.set_tracer_provider(provider)
+    enable_auto_tracing()
+else:
+    # auto_configure_azure_monitor resolves App Insights from
+    # APPLICATION_INSIGHTS_CONNECTION_STRING first, then falls back to
+    # FOUNDRY_PROJECT_ENDPOINT (project-managed App Insights).
+    enable_auto_tracing(auto_configure_azure_monitor=True)
 
     graph = create_agent(_build_chat_model(), tools=[get_weather])
     port = int(os.environ.get("PORT", "8088"))
