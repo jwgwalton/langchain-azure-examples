@@ -39,16 +39,15 @@ Then in another terminal:
 """
 from __future__ import annotations
 
+import asyncio
 import os
-from random import randint
-from typing import Annotated
+from typing import  List
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -57,23 +56,32 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from langchain_azure_ai.agents.hosting import ResponsesHostServer
 from langchain_azure_ai.callbacks.tracers import enable_auto_tracing
+from langchain_azure_ai.tools import AzureAIProjectToolbox
+from langchain_core.tools import BaseTool
+
 
 load_dotenv()
 
-
-@tool
-def get_weather(
-    location: Annotated[str, "City and country, e.g. 'Seattle, US'."],
-) -> str:
-    """Return a fake weather snapshot for the given location."""
-    conditions = ["sunny", "cloudy", "rainy", "stormy"]
-    return (
-        f"The weather in {location} is {conditions[randint(0, 3)]} "
-        f"with a high of {randint(10, 30)}C."
-    )
-
-
 _AZURE_AI_SCOPE = "https://ai.azure.com/.default"
+
+async def _load_toolbox_tools(toolbox_name: str, toolbox_version: str) -> List[BaseTool]:
+    """Fetch the LangChain-compatible tool list from the Foundry Toolbox.
+
+    ``project_endpoint`` is resolved from ``FOUNDRY_PROJECT_ENDPOINT``
+    automatically. The credential defaults to ``DefaultAzureCredential``
+    (so ``az login`` is enough for local dev). Each call opens a fresh
+    MCP session against the toolbox and closes it before returning.
+    """
+    toolbox = AzureAIProjectToolbox(
+        toolbox_name=toolbox_name,
+        toolbox_version=toolbox_version
+    )
+    
+    tools = await toolbox.get_tools()
+    print(f"Loaded {len(tools)} tool(s) from Foundry toolbox '{toolbox_name}':")
+    for t in tools:
+        print(f"  - {t.name}")
+    return tools
 
 
 def _build_chat_model() -> ChatOpenAI:
@@ -105,9 +113,14 @@ def main() -> None:
         # FOUNDRY_PROJECT_ENDPOINT (project-managed App Insights).
         enable_auto_tracing(auto_configure_azure_monitor=True)
 
-    graph = create_agent(_build_chat_model(), tools=[get_weather])
+    toolbox_name = os.environ["TOOLBOX_NAME"]
+    toolbox_version = os.environ["TOOLBOX_VERSION"]
+
+    tools = asyncio.run(_load_toolbox_tools(toolbox_name, toolbox_version))
+    graph = create_agent(_build_chat_model(), tools=tools)
+
     port = int(os.environ.get("PORT", "8088"))
-    # ResponsesHostServer  adapts the compiled LangGraph runnable into a REST endpoint compatible with the OpenAI Responses protocol
+    # ResponsesHostServer adapts the compiled LangGraph runnable into a REST endpoint compatible with the OpenAI Responses protocol
     ResponsesHostServer(graph).run(port=port)
 
 

@@ -46,5 +46,5 @@
   -Method Post `
   -ContentType "application/json" `
   -Body (@{
-      input = "What is the weather in London?"
+      input = "What is the weather in London today?"
   } | ConvertTo-Json)
