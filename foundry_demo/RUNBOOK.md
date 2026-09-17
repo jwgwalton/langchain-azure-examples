@@ -41,6 +41,13 @@
 
 * docker build . -t foundry_agent      
 * docker run --env-file .env -p 8088:8088 foundry_agent    
+
+## Create the toolbox
+This needs to only be ran once per change to the file.
+```python
+uv run create_toolboxes.py
+```
+
 * Invoke-RestMethod `
   -Uri "http://localhost:8088/responses" `
   -Method Post `
